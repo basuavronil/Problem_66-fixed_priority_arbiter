@@ -1,10 +1,40 @@
-# Problem_66-fixed_priority_arbiter
-A Fixed-Priority Arbiter is a digital circuit that grants access to a single shared resource (like a memory bus or data bus) among multiple competing requestors based on a strict, unchangeable hierarchy.
+## 4-Request Fixed-Priority Arbiter
 
-In a 4-requester design, 4 separate blocks (e.g., CPU, DMA, Peripheral 1, Peripheral 2) can request the resource at the exact same time. The arbiter looks at all incoming requests and immediately awards access to the active requestor with the highest hardcoded priority.
+### Module Overview
+The `fixed_priority_arbiter` provides low-latency bus arbitration for up to four competing hardware blocks (`req[3:0]`). It resolves multi-master resource contention by enforcing a strict, hardcoded hierarchy where lower-indexed request lines take absolute precedence over higher-indexed ones.
 
-Priority Hierarchy (Highest to Lowest)In a standard 4-requester implementation, priority is typically assigned from bit 0 to bit 3 (or vice versa):
-Request 0 (req[0]) --> Priority 1 (Highest): Wins every time it asks, no matter who else is asking.
-Request 1 (req[1]) --> Priority 2: Wins only if req[0] is NOT requesting.
-Request 2 (req[2]) --> Priority 3: Wins only if both req[0] and req[1] are NOT requesting.
-Request 3 (req[3]) --> Priority 4 (Lowest): Wins ONLY if nobody else is requesting.
+---
+
+### Priority Hierarchy & Logic Table
+The priority hierarchy is statically mapped as:
+$$\mathbf{req[0] > req[1] > req[2] > req[3]}$$
+
+* **`req[0]`** — **Highest Priority:** Granted immediately whenever asserted, regardless of other inputs.
+* **`req[1]`** — Granted only if `req[0]` is inactive.
+* **`req[2]`** — Granted only if `req[0]` and `req[1]` are both inactive.
+* **`req[3]`** — **Lowest Priority:** Granted only when it is the sole active request line.
+
+#### Truth Table
+
+| Request Vector (`req[3:0]`) | Grant Vector (`grant[3:0]`) | Winning Requestor | Condition / Selection Rule |
+| :---: | :---: | :---: | :--- |
+| `4'b0000` | `4'b0000` | *None* | Bus Idle (No active requests) |
+| `4'bxxx1` | `4'b0001` | **`req[0]`** | `req[0]` active (Masks bits 1, 2, and 3) |
+| `4'bxx10` | `4 me0010` | **`req[1]`** | `req[1]` active (`req[0]` inactive) |
+| `4'bx100` | `4'b0100` | **`req[2]`** | `req[2]` active (`req[0]`, `req[1]` inactive) |
+| `4'b1000` | `4'b1000` | **`req[3]`** | `req[3]` active (`req[0]`, `req[1]`, `req[2]` inactive) |
+
+---
+
+### Key Design Characteristics
+
+* **Zero-Latency Combinational Logic:** Operates entirely through pure combinational priority-masking gates, eliminating clock cycle overhead for grant evaluation.
+* **One-Hot Encoded Output:** Guarantees that at most one grant signal (`grant[n]`) is asserted at any given time, preventing bus collisions or illegal multi-driver states.
+* **Default Idle State:** Automatically drives `grant[3:0] = 4'b0000` when no requestors are active, avoiding false assertions on the shared resource.
+* **Starvation Trade-Off:** Optimizes for rapid response time on critical paths (`req[0]`) at the expense of potential starvation on lower-priority channels (`req[3]`) under heavy sustained loads.
+
+---
+
+### Ideal Use Cases
+1. **Critical Interrupt Controller Handling:** Routing emergency power, safety, or fault lines that must bypass standard execution queues.
+2. **Asymmetric Master Environments:** Shared memory access where a high-bandwidth CPU core requires immediate priority over slower peripheral DMA channels.
